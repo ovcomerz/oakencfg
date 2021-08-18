@@ -2,7 +2,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io/ioutil"
+	"os"
 )
 
 //导出模式
@@ -81,10 +83,13 @@ func exportByDir(dir string){
 }
 
 func exportSingleFile(filePath string){
-	tables := readExcel(filePath)
-	for _,t := range tables{
-		writeToJson(t)
-	}
 
+	tables := excelToTable(filePath)
+	for _,t := range tables{
+		err := os.WriteFile(fmt.Sprintf("./%s.json",t.name),t.toJson(),0600)
+		if err != nil{
+			print(err.Error())
+		}
+	}
 	print(len(tables))
 }

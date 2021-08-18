@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/pkg/errors"
 	"strconv"
@@ -62,7 +64,7 @@ type TableField struct {
 	comment  string
 }
 
-func(field *TableField) decodeType(typeName string) error{
+func(field *TableField) parseType(typeName string) error{
 	advanceType := parseFieldAdvanceType(typeName)
 	var err error = nil
 	field.advanceType = advanceType
@@ -90,11 +92,15 @@ func(field *TableField) decodeType(typeName string) error{
 }
 
 func (item *TableItem)valuesToMap(metadata []*TableField)  interface{} {
-	values := make(map[interface{}]interface{})
+	values := make(map[string]interface{})
 	for index,field := range metadata{
-		v,err := parseValue(item.values[index],field)
+		content := ""
+		if index < len(item.values) {
+			content = item.values[index]
+		}
+		v,err := parseValue(content,field)
 		if err != nil {
-
+			traceInfo("字段:%s 解析错误",field.name,err.Error())
 		}else {
 			values[field.name] = v
 		}
@@ -103,7 +109,7 @@ func (item *TableItem)valuesToMap(metadata []*TableField)  interface{} {
 }
 
 func parseValue(raw string, field *TableField) (interface{},error) {
-	if field.advanceType > 0 {
+	if field.advanceType >= 0 {
 		switch field.advanceType {
 		case listField:
 			return parseListValue(raw,field.baseType)
@@ -120,6 +126,9 @@ func parseValue(raw string, field *TableField) (interface{},error) {
 }
 
 func parseBaseTypeValue(raw string,t tableFiledBaseType) (interface{},error ){
+	if raw == "" {
+		return getBaseTypeDefaultValue(t),nil
+	}
 	var value interface{}
 	var err error
 	switch t {
@@ -147,11 +156,36 @@ func parseBaseTypeValue(raw string,t tableFiledBaseType) (interface{},error ){
 	return value,err
 }
 
+func getBaseTypeDefaultValue(t tableFiledBaseType) interface{}{
+	var v interface{}
+	switch t {
+	case intField,int64Field,byteField:
+		v = 0
+	case floatField,float64Field:
+		v =   0
+	case boolField:
+		v = false
+	default:
+		v = ""
+	}
+	return v
+}
+
 func parseListValue(raw string,baseType tableFiledBaseType) ([]interface{},error){
 	if !checkListFormat(raw) {
-		return nil,errors.Errorf("list类型格式错误")
+		return nil,errors.Errorf("list类型格式错误:%s",raw)
 	}
-	raw = raw[1:len(raw) -1]
+
+	rawLen := len(raw)
+	if rawLen > 0 {
+		raw = raw[1:len(raw) - 1]
+		rawLen = len(raw)
+	}
+
+	if rawLen == 0 {
+		return make([]interface{},0),nil
+	}
+
 	items := strings.Split(raw,",")
 	var values []interface{}
 	if len(items) == 0{
@@ -169,11 +203,15 @@ func parseListValue(raw string,baseType tableFiledBaseType) ([]interface{},error
 
 func parseTwoDimensionListValues(raw string,baseType tableFiledBaseType)  ([]interface{},error){
 	if !checkListFormat(raw) {
-		return nil,errors.Errorf("list类型格式错误")
+		return nil,errors.Errorf("list类型格式错误:%s",raw)
 	}
 
-	raw = raw[1:len(raw) - 1]
 	rawLen := len(raw)
+	if rawLen > 0 {
+		raw = raw[1:len(raw) - 1]
+		rawLen = len(raw)
+	}
+
 	if rawLen == 0 {
 		return make([]interface{},0),nil
 	}
@@ -297,7 +335,7 @@ func getTableType(typeName string) tableType {
 }
 
 func checkListFormat(raw string) bool {
-	if !strings.HasPrefix(raw,"[") || !strings.HasSuffix(raw,"]") {
+	if  raw != "" && (!strings.HasPrefix(raw,"[") || !strings.HasSuffix(raw,"]")) {
 		return false
 	}
 	return true
@@ -308,5 +346,25 @@ func checkMapFormat(raw string) bool {
 		return false
 	}
 	return true
+}
+
+func (table *Table)toJson() []byte{
+	m := make(map[string]interface{})
+	for key,val := range table.data{
+		m[key.(string)] = val.valuesToMap(table.fields)
+	}
+	//b,_ := json.Marshal(m)
+	//b,_ := json.MarshalIndent(m,"","    ")
+	buffer := bytes.NewBuffer([]byte{})
+	encoder := json.NewEncoder(buffer)
+	encoder.SetIndent("","    ")
+	encoder.SetEscapeHTML(false)
+	err := encoder.Encode(m)
+	if err != nil {
+		fmt.Println("json 解析错误")
+		return nil
+	}
+	return buffer.Bytes()
+
 }
 

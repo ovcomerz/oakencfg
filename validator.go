@@ -1,6 +1,9 @@
 package main
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 func checkTableName(name string) bool{
 	if len(name) <= 0{
@@ -16,7 +19,7 @@ func checkTableNameExclude(name string ) bool {
 }
 
 func checkColExclude(comment string) bool{
-	return false
+	return strings.HasPrefix(comment,"#")
 }
 
 func checkTableItemKey(key string,tType tableType)  bool{
